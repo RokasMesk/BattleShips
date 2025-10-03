@@ -1,0 +1,189 @@
+﻿@page "/"
+
+<PageTitle>Home</PageTitle>
+@using BattleShip.Model
+
+<h1>BattleShips</h1>
+
+<div class="mb-3">
+    <button class="btn btn-primary me-2" @onclick="NewGame">New Game</button>
+    @if (isSetup)
+    {
+        <button class="btn btn-secondary me-2" @onclick="RandomizeMine">Randomize Mine</button>
+        <button class="btn btn-outline-secondary me-2" @onclick="ResetMine">Reset</button>
+        <button class="btn btn-outline-info me-2" @onclick="ToggleOrientation">Orientation: @(horizontal ? "Horizontal" : "Vertical")</button>
+        <button class="btn btn-success" disabled="@(!CanStart)" @onclick="Start">Start</button>
+        <span class="ms-3">Place your fleet by clicking cells</span>
+    }
+    else
+    {
+        <span class="ms-3">Turn: @CurrentTurnName</span>
+    }
+    <div class="text-danger mt-2">@Message</div>
+    <div class="text-success mt-2">@LastAction</div>
+    </div>
+
+<div class="d-flex gap-4 flex-wrap">
+    <div>
+        <h5>Your Board</h5>
+        @if (isSetup)
+        {
+            <div class="mb-2">
+                <label class="form-label me-2">Fleet:</label>
+                <div class="fleet d-flex gap-2 flex-wrap">
+                    @foreach (var item in VisualFleet)
+                    {
+                        var selectable = remainingFleet.Any(s => s.Length == item.length);
+                        <button class="btn btn-sm @(selectedLength == item.length ? "btn-primary" : "btn-outline-primary")" disabled="@(!selectable)" @onclick="(() => SelectByLength(item.length))">
+                            @item.label
+                        </button>
+                    }
+                </div>
+                <div class="small text-muted mt-1">Right-click board to toggle orientation</div>
+            </div>
+        }
+        <BoardGrid Board="@playerOne?.Board" IsOwnBoard="true" OnCellClick="@(p => OnOwnCellClick(p.Item1, p.Item2))" OnRightClickBoard="@ToggleOrientation" />
+    </div>
+    <div>
+        <h5>Enemy Board</h5>
+        <BoardGrid Board="@playerTwo?.Board" IsOwnBoard="false" OnCellClick="@(p => OnEnemyCellClick(p.Item1, p.Item2))" />
+    </div>
+</div>
+
+@code {
+    private Game? game;
+    private Session? session;
+    private Player? playerOne;
+    private Player? playerTwo;
+    private string Message = string.Empty;
+    private string LastAction = string.Empty;
+    private bool isSetup = true;
+    private bool horizontal = true;
+    private List<Ship> remainingFleet = new();
+    private int selectedLength = 4;
+
+    private string CurrentTurnName => session?.CurrentTurn?.DisplayName ?? "-";
+    private bool CanStart => isSetup && remainingFleet.Count == 0;
+    private (string label, int length)[] VisualFleet = new[]
+    {
+        ("4x1", 4),
+        ("3x1", 3), ("3x1", 3),
+        ("2x1", 2), ("2x1", 2), ("2x1", 2),
+        ("1x1", 1), ("1x1", 1), ("1x1", 1), ("1x1", 1)
+    };
+
+    protected override void OnInitialized()
+    {
+        NewGame();
+    }
+
+    private void NewGame()
+    {
+        game = new Game();
+        playerOne = new Player("Player 1");
+        playerTwo = new Player("Enemy");
+        session = game.CreateSessionAndBoard(playerOne, playerTwo);
+        Message = "";
+        LastAction = "";
+        isSetup = true;
+        remainingFleet = ShipFactory.CreateFleetClassic().Select(s => s.WithoutPositionBinding()).ToList();
+        selectedLength = 4;
+        // Enemy gets randomized fleet for now
+        if (playerTwo != null)
+        {
+            game.RandomizeShipPlacements(playerTwo);
+        }
+        StateHasChanged();
+    }
+
+    private void RandomizeMine()
+    {
+        if (game == null || playerOne == null) return;
+        game.RandomizeShipPlacements(playerOne);
+        remainingFleet.Clear();
+    }
+
+    private void Start()
+    {
+        if (!CanStart) return;
+        session?.Start();
+        isSetup = false;
+    }
+
+    private void OnEnemyCellClick(int x, int y)
+    {
+        if (isSetup) return;
+        TryAttack(x, y);
+        StateHasChanged();
+    }
+
+    private void OnOwnCellClick(int x, int y)
+    {
+        if (isSetup)
+        {
+            if (playerOne == null) return;
+            var ship = remainingFleet.FirstOrDefault(s => s.Length == selectedLength);
+            if (ship == null)
+            {
+                Message = "No ship selected";
+                return;
+            }
+            var success = playerOne.Board.PlaceShip(ship, x, y, horizontal);
+            if (success)
+            {
+                remainingFleet.Remove(ship);
+                if (remainingFleet.Count > 0) selectedLength = remainingFleet.Max(s => s.Length);
+                Message = string.Empty;
+            }
+            else
+            {
+                Message = "Cannot place ship here";
+            }
+            StateHasChanged();
+        }
+        else
+        {
+            // During play, allow clicking own board only if it's enemy's turn
+            if (session?.CurrentTurn == playerTwo)
+            {
+                TryAttack(x, y);
+                StateHasChanged();
+            }
+        }
+    }
+
+    private void TryAttack(int x, int y)
+    {
+        try
+        {
+            if (session == null || playerOne == null) return;
+            var act = session.Attack(session.CurrentTurn!, x, y);
+            LastAction = act.Describe();
+            Message = string.Empty;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Message = ex.Message;
+        }
+    }
+
+    private void ToggleOrientation()
+    {
+        horizontal = !horizontal;
+    }
+
+    private void ResetMine()
+    {
+        if (playerOne == null) return;
+        playerOne.Board.ResetShips();
+        remainingFleet = ShipFactory.CreateFleetClassic().Select(s => s.WithoutPositionBinding()).ToList();
+        selectedLength = 4;
+        Message = string.Empty;
+    }
+
+    private void SelectByLength(int length)
+    {
+        selectedLength = length;
+    }
+}

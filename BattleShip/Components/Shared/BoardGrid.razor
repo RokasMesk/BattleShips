@@ -1,0 +1,64 @@
+@using BattleShip.Model
+
+@if (Board is null)
+{
+    <div>Board not initialized.</div>
+}
+else
+{
+    <div class="board-grid @(IsOwnBoard ? "own" : "enemy")" @oncontextmenu:preventDefault @oncontextmenu="OnRightClick">
+        @for (var y = 0; y < Board.Height; y++)
+        {
+            <div class="row">
+                @for (var x = 0; x < Board.Width; x++)
+                {
+                    var cell = Board.GetCell(x, y);
+                    var cls = GetCss(cell);
+                    <button class="cell @cls" type="button" @onclick="(() => OnCellClick.InvokeAsync((x,y)))">@GetContent(cell)</button>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public Board? Board { get; set; }
+    [Parameter] public bool IsOwnBoard { get; set; }
+    [Parameter] public EventCallback<(int x, int y)> OnCellClick { get; set; }
+    [Parameter] public EventCallback OnRightClickBoard { get; set; }
+
+    private string GetCss(Cell cell)
+    {
+        if (cell.State == CellState.Hit) return "hit";
+        if (cell.State == CellState.Miss) return "miss";
+        if (IsOwnBoard && cell.State == CellState.Ship) return "ship";
+        return "empty";
+    }
+
+    private string GetContent(Cell cell)
+    {
+        if (cell.State == CellState.Hit) return "✕";
+        if (cell.State == CellState.Miss) return "·";
+        if (IsOwnBoard && cell.State == CellState.Ship) return "■";
+        return string.Empty;
+    }
+
+    private async Task OnRightClick(MouseEventArgs e)
+    {
+        if (OnRightClickBoard.HasDelegate)
+        {
+            await OnRightClickBoard.InvokeAsync();
+        }
+    }
+}
+
+<style>
+.board-grid { display: inline-block; padding: 4px; border: 1px solid #ccc; }
+.board-grid .row { display: flex; }
+.board-grid .cell { width: 28px; height: 28px; margin: 1px; border: 1px solid #999; background: #eef; }
+.board-grid .cell.ship { background: #88c; }
+.board-grid .cell.hit { background: #c33; color: #fff; }
+.board-grid .cell.miss { background: #aac; }
+.board-grid.enemy .cell.ship { background: #eef; }
+</style>
+
